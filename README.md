@@ -22,9 +22,10 @@ s.bind((socket.gethostname(),1234))
 # s.bind((IP,4-digits port number))
 
 s.listen(5)
-#this is server, it is going to prepare for the incoming connection
-#it leave a queue of 5
-#if multiple connections come so fast
+# Enable a server to accept connections. If backlog is specified, 
+# it must be at least 0 (if it is lower, it is set to 0); 
+# it specifies the number of unaccepted connections that the system will allow before refusing new connections. 
+# If not specified, a default reasonable value is chosen.
 
 while True:
     clientsocket, address = s.accept()
@@ -245,3 +246,271 @@ while True:
 ![](/images/2020-07-01-19-03-22.png)
 
 
+## Part III: sending and receving python objects with *Pickle*
+
+### 1. import pickle
+
+Python pickle module is used for serializing and de-serializing a Python object structure. Any object in Python can be pickled so that it can be saved on disk. What pickle does is that it “serializes” the object first before writing it to file. Pickling is a way to convert a python object (list, dict, etc.) into a character stream. The idea is that this character stream contains all the information necessary to reconstruct the object in another python script.
+
+### 2. create server
+
+```py
+import socket
+import time
+import pickle
+
+HEADERSIZE = 10
+
+s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+s.bind((socket.gethostname(),1234))
+s.listen(5)
+
+while True:
+    clientsocket, address = s.accept()
+    print(f"connection from {address} has been established!")
+
+    d = {1: "Hey", 2: "There"}
+    msg = pickle.dumps(d)
+    # this is already bytes,so we need to transfer header to bytes in msg
+
+    msg = bytes(f'{len(msg):<{HEADERSIZE}}',"utf-8") + msg
+    # now msg is already bytes
+
+    clientsocket.send(msg)
+```
+
+### 3. create client
+
+```py
+import socket
+import pickle
+
+HEADERSIZE = 10
+
+s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+s.connect((socket.gethostname(),1234))
+
+while True:
+    full_msg = b'' #full_msg should be bytes!
+    new_msg = True
+
+    while True:
+        # receive a little bit more than the header size for each time
+        msg = s.recv(16)
+        if new_msg:
+            print(f"new message length: {msg[:HEADERSIZE]}")
+            msglen = int(msg[:HEADERSIZE])
+            new_msg = False
+
+        # assemble message with out any decoding
+        full_msg += msg
+
+        if len(full_msg) - HEADERSIZE == msglen:
+            print("full message received")
+            print("objects received without decoding:")
+            print(full_msg[HEADERSIZE:])
+            #check what is here without decodeing
+
+            d = pickle.loads(full_msg[HEADERSIZE:])
+            print("decoded objects:")
+            print(d)
+            #now check what is print here
+
+            new_msg = True
+            full_msg = b''  #clear buffer for new message
+
+    print(full_msg)
+```
+
+### 4. check output
+
+![](/images/2020-07-02-14-43-41.png)
+
+## Part IV: build a socket chat room
+
+### 1. build the server
+
+```py
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import socket
+import select
+# give OS level IO ability no matter WIN/MAC/LINUX
+# select() 函数是部署底层操作系统的直接接口。
+# 它监视着套接字，打开的文件和管道（任何调用 fileno() 方法后会返回有效文件描述符的东西）直到它们变得可读可写或有错误发生。
+# select() 让我们同时监视多个连接变得简单，同时比在 Python 中使用套接字超时写轮询池要有效，
+# 因为这些监视发生在操作系统网络层而不是在解释器层。
+
+
+
+HEADER_LENGTH = 10
+IP = "127.0.0.1"
+PORT = 1234
+
+
+server_socket =  socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+server_socket.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
+# the SO_REUSEADDR flag tells the kernel to reuse a local socket in TIME_WAIT state,
+# without waiting for its natural timeout to expire.
+# SOL-Socket Option Level, SO-Socket Option, 1 is true, allows us to reconnect
+
+server_socket.bind((IP,PORT))
+server_socket.listen()
+
+sockets_list = [server_socket]
+
+clients = {} #用户空字典，记录用户
+
+
+def receive_message(client_socket):
+    try:
+        message_header = client_socket.recv(HEADER_LENGTH)
+
+        if not len(message_header):
+            return False
+
+        message_length = int(message_header.decode("utf-8").strip())
+        return {"header": message_header, "data": client_socket.recv(message_length)}
+
+    except: #一般不会
+        return False
+
+
+
+while True:
+    read_sockets, _, exception_sockets = select.select(sockets_list, [], sockets_list)
+    # select.select(rlist, wlist, xlist[, timeout])
+    # This is a straightforward interface to the Unix select() system call.
+    # The first three arguments are iterables of ‘waitable objects’:
+    # either integers representing file descriptors or objects with a parameterless method named fileno() returning such an integer:
+
+    # rlist: wait until ready for reading
+    # wlist: wait until ready for writing
+    # xlist: wait for an “exceptional condition” (see the manual page for what your system considers such a condition)
+
+    for notified_socket in read_sockets:
+        #read_sockets是select监听的sockets_list里的可读套接字，并且它此时有数据可读！（用户申请加入群组或用户发来消息）
+        #如果该可读套接字是主服务器，对它的处理是让他准备好接受新的连接
+        if notified_socket == server_socket: #means some one just wamt to connect to this server: new user
+            client_socket, client_address = server_socket.accept()
+
+            user = receive_message(client_socket)#第一次发来的信息是用户信息
+            if user is False:
+                continue
+
+            #将新的套接字加如监听列表
+            sockets_list.append(client_socket)
+
+            clients[client_socket] = user
+
+            print(f"Accept new connection from {client_address[0]}:{client_address[1]} username:{user['data'].decode('utf-8')}")
+
+        else:
+            message = receive_message(notified_socket)
+
+            if message is False: #用户退群
+                print(f"Closed connection from {clients[notified_socket]['data'].decode('utf-8')}")
+                sockets_list.remove(notified_socket)
+                del clients[notified_socket]
+                continue
+
+            user = clients[notified_socket] #通过用户字典对应此时的用户
+            print(f"receive message from {user['data'].decode('utf-8')} : {message['data'].decode('utf-8')}")
+
+            for client_socket in clients:
+                if client_socket != notified_socket: #发送给群组里面的其他用户
+                    client_socket.send(user['header'] + user['data'] + message['header'] + message['data'])
+
+    for notified_socket in exception_sockets:
+        sockets_list.remove(notified_socket)
+        del clients[notified_socket]
+```
+
+### 2. build the client
+
+```py
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+import socket
+import select
+import errno
+import sys
+
+HEADER_LENGTH = 10
+
+IP = "127.0.0.1"
+PORT = 1234
+
+#create an username
+my_username = input("Username: ")
+client_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+client_socket.connect((IP,PORT))
+
+client_socket.setblocking(False)
+#set connection to non-blocking state, so .recv() call won't block, just return some exception we will handle
+
+#first connect to server sending your username
+username = my_username.encode("utf-8")
+username_header = f"{len(username):<{HEADER_LENGTH}}".encode("utf-8")
+client_socket.send(username_header + username)
+
+
+while True: #发现一个缺陷，更新消息会被input阻塞，按回车更新
+    message = input(f"{my_username} > ")
+
+    if message:
+        message = message.encode("utf-8")
+        message_header = f"{len(message) :< {HEADER_LENGTH}}".encode("utf-8")
+        client_socket.send(message_header + message)
+
+    #receive message
+    try:
+        while True:
+            username_header = client_socket.recv(HEADER_LENGTH)
+
+            #if we receive no data from server(receive header but no message), close connection
+            if not len(username_header):
+                print("connection closed by the server")
+                sys.exit()
+            username_length = int(username_header.decode("utf-8").strip())
+            username = client_socket.recv(username_length).decode("utf-8")
+
+            message_header = client_socket.recv(HEADER_LENGTH)
+            message_length = int(message_header.decode("utf-8").strip())
+            message = client_socket.recv(message_length).decode("utf-8")
+
+            print(f"{username} > {message}")
+
+    except IOError as e:
+        # This is normal on non-blocking connections -- when there are no incoming data, error will be raised
+        # some OS will indicate that using AGAIN, and some using WOULDBLOCK
+        # we gonna check both, if one of tht two hit, just continue
+        # if hit none of this two, something happened
+        if e.errno != errno.EAGAIN and e.errno != errno.EWOULDBLOCK:
+            print('Reading error',str(e))
+            sys.exit()
+        continue   #if it is E AGAIN or E WOULD BLOCK, we don't care, continue
+
+    except Exception as e:
+        # ANy other exception happened, exit
+        print('General error',str(e))
+        sys.exit()
+```
+
+### 3. check output
+
+**conclusion**:
+
+an drawback: input will block message to be updated, must type enter or send new message. We can fix this by threads.
+发现一个缺陷，更新消息会被input阻塞，按回车或者输入信息才会更新，可使用threads解决
+
+**server**:
+
+![](/images/2020-07-03-16-53-38.png)
+
+**client**:
+
+![](/images/2020-07-03-16-54-42.png)
+
+![](/images/2020-07-03-16-54-57.png)
