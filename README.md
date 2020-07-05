@@ -328,7 +328,10 @@ while True:
 
 ## Part IV: build a socket chat room
 
+**\*** *details can be dound in another repository specifically for the thread version of this part*
+
 ### 1. build the server
+
 
 ```py
 #!/usr/bin/env python3
