@@ -2,6 +2,29 @@
 
 ---
 
+- [SOCKET-PROGRAMMING](#socket-programming)
+  - [Part I: sending and receving data](#part-i-sending-and-receving-data)
+    - [1. create server](#1-create-server)
+    - [2. create client](#2-create-client)
+    - [3. Test connection](#3-test-connection)
+    - [4. explore the buffer](#4-explore-the-buffer)
+  - [Part II: buffer and streaming data](#part-ii-buffer-and-streaming-data)
+    - [1. build a server sending message with header](#1-build-a-server-sending-message-with-header)
+    - [2. build a client that can sparse header](#2-build-a-client-that-can-sparse-header)
+    - [3. run and check output](#3-run-and-check-output)
+    - [4. send time](#4-send-time)
+  - [Part III: sending and receving python objects with *Pickle*](#part-iii-sending-and-receving-python-objects-with-pickle)
+    - [1. import pickle](#1-import-pickle)
+    - [2. create server](#2-create-server)
+    - [3. create client](#3-create-client)
+    - [4. check output](#4-check-output)
+  - [Part IV: build a socket chat room](#part-iv-build-a-socket-chat-room)
+    - [1. build the server](#1-build-the-server)
+    - [2. build the client](#2-build-the-client)
+    - [3. check output](#3-check-output)
+
+---
+
 ## Part I: sending and receving data
 
 ### 1. create server
@@ -245,6 +268,7 @@ while True:
 
 ![](/images/2020-07-01-19-03-22.png)
 
+---
 
 ## Part III: sending and receving python objects with *Pickle*
 
@@ -325,6 +349,9 @@ while True:
 ### 4. check output
 
 ![](/images/2020-07-02-14-43-41.png)
+
+
+---
 
 ## Part IV: build a socket chat room
 
